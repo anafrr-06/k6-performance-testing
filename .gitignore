@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Reports
+reports/*.json
+reports/*.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+
+# k6 outputs
+*.json.gz
+
+# Docker
+.docker/
+
+# Grafana data
+grafana/data/

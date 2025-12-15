@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  api:
+    build: ./api
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - DB_LATENCY_MS=10
+      - DEGRADATION_THRESHOLD=100
+      - RATE_LIMIT=1000
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  k6:
+    image: grafana/k6:latest
+    volumes:
+      - ./tests:/tests
+      - ./reports:/reports
+    environment:
+      - BASE_URL=http://api:3000
+    depends_on:
+      api:
+        condition: service_healthy
+    # Default command runs baseline test
+    command: run -e BASE_URL=http://api:3000 /tests/load/baseline.js
+
+  # Optional: Grafana + InfluxDB for real-time monitoring
+  influxdb:
+    image: influxdb:1.8
+    ports:
+      - "8086:8086"
+    environment:
+      - INFLUXDB_DB=k6
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+      - ./grafana:/etc/grafana/provisioning
+    depends_on:
+      - influxdb
+    profiles:
+      - monitoring

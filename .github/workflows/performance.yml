@@ -1,0 +1,82 @@
+name: Performance Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Test type to run'
+        required: true
+        default: 'baseline'
+        type: choice
+        options:
+          - baseline
+          - purchase-flow
+          - stress
+          - spike
+          - all
+
+jobs:
+  performance-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install API dependencies
+        run: cd api && npm install
+
+      - name: Start API
+        run: |
+          cd api
+          npm start &
+          sleep 5
+          curl -f http://localhost:3000/health || exit 1
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Run Baseline Test
+        if: github.event.inputs.test_type == 'baseline' || github.event.inputs.test_type == 'all' || github.event.inputs.test_type == ''
+        run: k6 run -e BASE_URL=http://localhost:3000 tests/load/baseline.js --out json=reports/baseline.json
+
+      - name: Run Purchase Flow Test
+        if: github.event.inputs.test_type == 'purchase-flow' || github.event.inputs.test_type == 'all'
+        run: k6 run -e BASE_URL=http://localhost:3000 tests/load/purchase-flow.js --out json=reports/purchase-flow.json
+
+      - name: Run Spike Test
+        if: github.event.inputs.test_type == 'spike' || github.event.inputs.test_type == 'all'
+        run: k6 run -e BASE_URL=http://localhost:3000 tests/spike/sudden-traffic.js --out json=reports/spike.json
+
+      - name: Run Stress Test
+        if: github.event.inputs.test_type == 'stress' || github.event.inputs.test_type == 'all'
+        run: k6 run -e BASE_URL=http://localhost:3000 tests/stress/breaking-point.js --out json=reports/stress.json
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k6-reports
+          path: reports/
+          retention-days: 30
+
+      - name: Check API metrics
+        if: always()
+        run: curl -s http://localhost:3000/metrics
